@@ -125,6 +125,11 @@ public final class XCrash {
         }
 
         //init file manager
+        //初始化了文件管理器 主要用来管理xcrash缓存日志
+        //在初始化时，主要进行了三步操作：
+        //1、初始化基础参数
+        //2、对现有的crash日志进行整合 将多余的crash日志转换为dirty日志 然后再清理转换为clean文件
+        //3、对现有的placeholder文件进行整合，补充clean文件 同时当clean文件、dirty文件过多时 对这两种文件进行清理
         FileManager.getInstance().initialize(
             params.logDir,
             params.javaLogCountMax,

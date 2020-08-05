@@ -36,6 +36,20 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 这里实际上构建了4种类型的文件：
+ * 1、java crash log
+ * 2、native crash log
+ * 3、arn log
+ * 4、placeholder log
+ * 当我们的各类型存储的文件大于了设定的值时，需要对文件进行存储：
+ * 这里的逻辑简单概括为：
+ * 1、如果没有设置placeholder文件的数量，那么直接对多余的文件（对文件排序后，选择最早的文件）进行删除
+ * 2、如果设置了placeholder文件数量，则先check 现有的clean文件数量是否已经大于了placeholder的max值
+ *    如果大于，直接删除待删除文件
+ * 3、如果当前placeholder clean文件数量小于placeholder的max值，那么直接将当前待删除文件标记为dirty
+ *    同时对其向clean文件转换 完成placeholder的占位作用
+ */
 class FileManager {
 
     private String placeholderPrefix = "placeholder";
@@ -59,6 +73,16 @@ class FileManager {
         return instance;
     }
 
+    /**
+     * 初始化时 主要进行了简单的参数赋值以及对现有文件的整理工作
+     * @param logDir
+     * @param javaLogCountMax
+     * @param nativeLogCountMax
+     * @param anrLogCountMax
+     * @param placeholderCountMax
+     * @param placeholderSizeKb
+     * @param delayMs
+     */
     void initialize(String logDir, int javaLogCountMax, int nativeLogCountMax, int anrLogCountMax, int placeholderCountMax, int placeholderSizeKb, int delayMs) {
         this.logDir = logDir;
         this.javaLogCountMax = javaLogCountMax;
@@ -77,7 +101,8 @@ class FileManager {
             if (files == null) {
                 return;
             }
-
+            //统计一波现有crash日志记录的文件夹各类型文件
+            //便于进行空间整理与控制
             int javaLogCount = 0;
             int nativeLogCount = 0;
             int anrLogCount = 0;
@@ -269,6 +294,17 @@ class FileManager {
         }
     }
 
+    /**
+     * 这里recycler的逻辑如下：
+     * 1、首先check是否设置了允许placeholder文件缓存 即 this.placeholderCountMax <= 0
+     *    如果不允许缓存，直接删除待删除文件
+     * 2、寻找placeholder_xxxxx.clean.xrash文件 如果该文件数量已经超过 placeholder允许的最大数量 直接删除待删除文件
+     * 3、将待删除文件改名为 placeholder_xxxx.dirty.crash文件
+     *    如果改名失败，则尝试删除文件
+     *    如果改名成功，则尝试清理这个dirty文件 实际上是将该文件内部所有数据写为0
+     * @param logFile
+     * @return
+     */
     @SuppressWarnings({"unused"})
     boolean recycleLogFile(File logFile) {
         if (logFile == null) {
@@ -322,6 +358,7 @@ class FileManager {
         }
     }
 
+
     private void doMaintain() {
         if (!Util.checkAndCreateDir(logDir)) {
             return;
@@ -329,12 +366,14 @@ class FileManager {
         File dir = new File(logDir);
 
         try {
+            //尝试对crash日志空间进行清理
             doMaintainTombstone(dir);
         } catch (Exception e) {
             XCrash.getLogger().e(Util.TAG, "FileManager doMaintainTombstone failed", e);
         }
 
         try {
+            //整合placeholder相关的文件
             doMaintainPlaceholder(dir);
         } catch (Exception e) {
             XCrash.getLogger().e(Util.TAG, "FileManager doMaintainPlaceholder failed", e);
@@ -342,12 +381,23 @@ class FileManager {
     }
 
     private void doMaintainTombstone(File dir) {
+        //尝试对各种类型的文件进行回收操作
         doMaintainTombstoneType(dir, Util.nativeLogSuffix, nativeLogCountMax);
         doMaintainTombstoneType(dir, Util.javaLogSuffix, javaLogCountMax);
         doMaintainTombstoneType(dir, Util.anrLogSuffix, anrLogCountMax);
         doMaintainTombstoneType(dir, Util.traceLogSuffix, traceLogCountMax);
     }
 
+    /**
+     * 对文件进行回收操作：
+     * 1、首先对文件类型进行筛选
+     * 2、对筛选后的文件进行排序
+     * 3、将最旧的文件进行回收操作
+     * @param dir
+     * @param logSuffix
+     * @param logCountMax
+     * @return
+     */
     private boolean doMaintainTombstoneType(File dir, final String logSuffix, int logCountMax) {
         File[] files = dir.listFiles(new FilenameFilter() {
             @Override
@@ -375,6 +425,23 @@ class FileManager {
         return result;
     }
 
+    /**
+     * 对现有的placeholder_xxxx.clean.xcrash、placeholder_xxxx.dirty.xcrash文件进行整合
+     * 1、check是否含有clean类型文件 如果没有 直接return？
+     *   这里有个矛盾点，后面当clean文件较少时 还会通过创建文件 作为dirty文件来构建clean文件 但这里竟然直接return了
+     * 2、check是否有dirty类型文件 如果没有 直接return？
+     *   这里有个矛盾点，后面当clean文件较少时 还会通过创建文件 作为dirty文件来构建clean文件 但这里竟然直接return了
+     * 3、当既存在clean文件 又存在dirty文件时 开始整理
+     *    （1）、首先判断clean文件数量是否大于placeholder的允许总数 如果大于了 则进入4，进行最后扫尾工作
+     *    （2）、当存在dirty文件时 尝试将dirty文件转换为clean文件
+     *    （3）、当不存在dirty文件时 构建新文件作为dirty文件 转换为clean文件
+     *     (4)、为了避免创建过多clean文件 还有个check条件 ++i > this.placeholderCountMax * 2 时 break
+     *          因为有外层while循环兜底 没懂（4）这个条件啥时候能触发出来
+     * 4、将clean文件的数量补充到placeholder允许的最大数值后 进行最后的扫尾工作
+     *    （1）、将多余的clean文件删除掉
+     *    （2）、将多余的dirty文件删除掉
+     * @param dir
+     */
     @SuppressWarnings("ResultOfMethodCallIgnored")
     private void doMaintainPlaceholder(File dir) {
         //get all existing placeholder files
@@ -421,6 +488,7 @@ class FileManager {
             }
 
             //don't try it too many times
+            //没懂这个条件啥时候会触发出来
             if (++i > this.placeholderCountMax * 2) {
                 break;
             }
@@ -457,6 +525,12 @@ class FileManager {
         }
     }
 
+    /**
+     * 尝试清理被标记为dirty的文件：核心思想，将dirty文件的所有内容 全部写为0
+     * 如果尝试该错做失败，则尝试删除待删除文件
+     * @param dirtyFile
+     * @return
+     */
     @SuppressWarnings("ResultOfMethodCallIgnored")
     private boolean cleanTheDirtyFile(File dirtyFile) {
 
@@ -467,8 +541,12 @@ class FileManager {
             byte[] block = new byte[1024];
             Arrays.fill(block, (byte) 0);
 
+            //默认block块为placeholder的最大kb数 默认为128 由xcrash初始化时设置 用户可修改
             long blockCount = placeholderSizeKb;
+            //获取待删除文件的大小
             long dirtyFileSize = dirtyFile.length();
+            //当待删除文件大小大于默认数值时，需更新block大小 更新为待删除的文件大小/1024（+1）
+            //这里+1的操作是当非填满时的最后的剩余字节数 需要再占用一个
             if (dirtyFileSize > placeholderSizeKb * 1024) {
                 blockCount = dirtyFileSize / 1024;
                 if (dirtyFileSize % 1024 != 0) {
@@ -478,17 +556,21 @@ class FileManager {
 
             //clean the dirty file
             stream = new FileOutputStream(dirtyFile.getAbsoluteFile(), false);
+            //开始对待删除的文件进行写入工作 直接将block写入 block为全0数据
             for (int i = 0; i < blockCount; i++) {
                 if (i + 1 == blockCount && dirtyFileSize % 1024 != 0) {
-                    //the last block
+                    //the last block 当写到最后一个区块时 需要注意字节数
                     stream.write(block, 0, (int) (dirtyFileSize % 1024));
                 } else {
+                    //非最后一个区块 直接写入即可
                     stream.write(block);
                 }
             }
             stream.flush();
 
             //rename the dirty file to clean file
+            //当将待删除文件的数据全部写为0后
+            //将其名称由placeholder_xxx.dirty.xcrash 变更为 placeholder_xxxx.clean.xcrash
             String newCleanFilePath = String.format(Locale.US, "%s/%s_%020d%s", logDir, placeholderPrefix, new Date().getTime() * 1000 + getNextUnique(), placeholderCleanSuffix);
             succeeded = dirtyFile.renameTo(new File(newCleanFilePath));
         } catch (Exception e) {
