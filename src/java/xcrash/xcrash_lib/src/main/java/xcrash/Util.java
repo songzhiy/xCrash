@@ -281,6 +281,16 @@ class Util {
         return false;
     }
 
+    /**
+     * 构建crash 日志头部
+     * 用来记录当前设备的相关信息
+     * @param startTime
+     * @param crashTime
+     * @param crashType
+     * @param appId
+     * @param appVersion
+     * @return
+     */
     static String getLogHeader(Date startTime, Date crashTime, String crashType, String appId, String appVersion) {
         DateFormat timeFormatter = new SimpleDateFormat(Util.timeFormatterStr, Locale.US);
 
@@ -301,6 +311,14 @@ class Util {
             + "Build fingerprint: '" + Build.FINGERPRINT + "'\n";
     }
 
+    /**
+     * 获取当前的内存信息
+     * 主要获取内容：
+     * 1、内存信息：From: /proc/meminfo
+     * 2、进程状态：From: /proc/PID/status
+     * 3、进程限制：From: /proc/PID/limits
+     * @return
+     */
     static String getMemoryInfo() {
         return "memory info:\n"
             + " System Summary (From: /proc/meminfo)\n"
@@ -316,6 +334,10 @@ class Util {
             + "\n";
     }
 
+    /**
+     * 捕获当前网络情况
+     * @return
+     */
     static String getNetworkInfo() {
         if (Build.VERSION.SDK_INT >= 29) {
             return "network info:\n"
@@ -347,6 +369,11 @@ class Util {
         }
     }
 
+    /***
+     * 获取打开的所有文件
+     * 这里是通过linux文件描述符 fd 来进行查找
+     * @return
+     */
     static String getFds() {
         StringBuilder sb = new StringBuilder("open files:\n");
 
@@ -393,6 +420,15 @@ class Util {
         return sb.toString();
     }
 
+    /***
+     * 通过/system/bin/logcat 来捕获相关的日志
+     * 这里通过buffer name / priority来控制日志分类
+     * 通过 限制最大行数 来控制日志输出量
+     * @param logcatMainLines
+     * @param logcatSystemLines
+     * @param logcatEventsLines
+     * @return
+     */
     static String getLogcat(int logcatMainLines, int logcatSystemLines, int logcatEventsLines) {
         int pid = android.os.Process.myPid();
         StringBuilder sb = new StringBuilder();

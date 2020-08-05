@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 1、java crash log
  * 2、native crash log
  * 3、arn log
- * 4、placeholder log
+ * 4、placeholder log：主要用来节约生成文件时的开销
  * 当我们的各类型存储的文件大于了设定的值时，需要对文件进行存储：
  * 这里的逻辑简单概括为：
  * 1、如果没有设置placeholder文件的数量，那么直接对多余的文件（对文件排序后，选择最早的文件）进行删除
@@ -206,12 +206,21 @@ class FileManager {
         }
     }
 
+    /**
+     * 构建一个新的日志文件：
+     * 1、首先构建一个新的日志内存file
+     * 2、搜索placeholder clean文件 当存在时 尝试对其重命名 重命名为新的日志内存file
+     *    如果失败 则删除该placeholder文件 并尝试下一个 直到成功
+     * 3、如果一直失败 没有placeholder文件了，那么直接根据新的日志内存file，直接构建出一个真实的文件
+     * @param filePath
+     * @return
+     */
     @SuppressWarnings("ResultOfMethodCallIgnored")
     File createLogFile(String filePath) {
         if (this.logDir == null) {
             return null;
         }
-
+        //首先构建了一个日志存储根路径
         if (!Util.checkAndCreateDir(logDir)) {
             return null;
         }
@@ -219,6 +228,7 @@ class FileManager {
         File newFile = new File(filePath);
 
         //clean placeholder files
+        //寻找placeholder clean文件 然后将其名称重命名为新的crash日志名称
         File dir = new File(logDir);
         File[] cleanFiles = dir.listFiles(new FilenameFilter() {
             @Override
@@ -233,18 +243,22 @@ class FileManager {
             while (cleanFilesCount > 0) {
                 File cleanFile = cleanFiles[cleanFilesCount - 1];
                 try {
+                    //尝试对placeholder clean文件进行重命名
+                    //note:这里直接对真实的文件进行了重命名操作 如果操作成功，直接返回重命名后的地址文件 也就是newFile
                     if (cleanFile.renameTo(newFile)) {
                         return newFile;
                     }
                 } catch (Exception e) {
                     XCrash.getLogger().e(Util.TAG, "FileManager createLogFile by renameTo failed", e);
                 }
+                //当重命名失败时 将该clean文件删除掉 继续尝试下一个
                 cleanFile.delete();
                 cleanFilesCount--;
             }
         }
 
         //try to create new file
+        //当不存在placeholder clean文件 或者 重命名一直失败的情况下，直接构建一个新的文件 当作日志文件
         try {
             if (newFile.createNewFile()) {
                 return newFile;

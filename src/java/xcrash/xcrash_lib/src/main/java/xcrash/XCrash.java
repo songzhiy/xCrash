@@ -141,6 +141,7 @@ public final class XCrash {
 
         if (params.enableJavaCrashHandler || params.enableNativeCrashHandler || params.enableAnrHandler) {
             if (ctx instanceof Application) {
+                //在Application中构建了一个activity监听器，用来管控当前app内的所有activity
                 ActivityMonitor.getInstance().initialize((Application) ctx);
             }
         }
