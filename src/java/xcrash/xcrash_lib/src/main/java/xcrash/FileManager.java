@@ -192,6 +192,12 @@ class FileManager {
         }
     }
 
+    /**
+     * 对现有的anr文件进行整理工作
+     * 判断是否已经超过anr文件的最大缓存数量 如果超过 则需要进行 删除/回收工作
+     * 具体过程同crash文件一致
+     * @return
+     */
     boolean maintainAnr() {
         if (!Util.checkAndCreateDir(logDir)) {
             return false;

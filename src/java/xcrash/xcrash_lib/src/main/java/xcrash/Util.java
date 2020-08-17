@@ -255,6 +255,15 @@ class Util {
         }
     }
 
+    /**
+     * check当前进程状态
+     * 通过activityManager.getProcessInErrorState()获取到异常的进程list
+     * 然后遍历 寻找是否有当前进程
+     * 如果没有找到 则休眠500ms 继续寻找
+     * @param ctx
+     * @param timeoutMs
+     * @return
+     */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     static boolean checkProcessAnrState(Context ctx, long timeoutMs) {
         ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
@@ -317,6 +326,9 @@ class Util {
      * 1、内存信息：From: /proc/meminfo
      * 2、进程状态：From: /proc/PID/status
      * 3、进程限制：From: /proc/PID/limits
+     * 4、最后再捕捉一下整体的内存信息 通过MemoryInfo
+     *    Debug.MemoryInfo mi = new Debug.MemoryInfo();
+     *    Debug.getMemoryInfo(mi);
      * @return
      */
     static String getMemoryInfo() {

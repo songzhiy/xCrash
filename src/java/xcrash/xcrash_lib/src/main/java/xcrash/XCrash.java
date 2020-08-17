@@ -167,6 +167,7 @@ public final class XCrash {
         }
 
         //init ANR handler (API level < 21)
+        //当手机版本在21以下时 在java层进行anr监控 通过监控data/anr/trace.txt文件
         if (params.enableAnrHandler && Build.VERSION.SDK_INT < 21) {
             AnrHandler.getInstance().initialize(
                 ctx,
@@ -185,6 +186,8 @@ public final class XCrash {
         }
 
         //init native crash handler / ANR handler (API level >= 21)
+        //当api>=21时，通过c层进行anr监控 具体流程尚未知晓 待看
+        //初始化native层的xcrash 具体工作尚未知晓 待看
         int r = Errno.OK;
         if (params.enableNativeCrashHandler || (params.enableAnrHandler && Build.VERSION.SDK_INT >= 21)) {
             r = NativeHandler.getInstance().initialize(
